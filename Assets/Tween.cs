@@ -8,27 +8,43 @@ public static class TweenExt
     public static TweenerBase DoMove(this Transform transform, Vector3 endValue, float duration)
     {
         var tweener = new Tweener_Vector3(() => transform.position, (v) => transform.position = v, endValue, duration);
-        Tween.Instance.AddTweener(tweener);
+        TweenManager.GetInstance().AddTweener(tweener);
         return tweener;
     }
 
     public static TweenerBase DoScale(this Transform transform, Vector3 endValue, float duration)
     {
         var tweener = new Tweener_Vector3(() => transform.localScale, (v) => transform.localScale = v, endValue, duration);
-        Tween.Instance.AddTweener(tweener);
+        TweenManager.GetInstance().AddTweener(tweener);
         return tweener;
     }
 }
 
-public class Tween : MonoBehaviour
+public class TweenManager : MonoBehaviour
 {
-    public static Tween Instance;
+    public static TweenManager _instance;
 
     private LinkedList<TweenerBase> _tweeners = new LinkedList<TweenerBase>();
 
+    public static void Init()
+    {
+        if (_instance != null)
+            return;
+        var go = new GameObject("TweenManager");
+        _instance = go.AddComponent<TweenManager>() as TweenManager;       
+    }
+
+    public static TweenManager GetInstance()
+    {
+        if (_instance == null)
+        {
+            Debug.LogError("tween not init");
+        }
+        return _instance;
+    }
+
     private void Awake()
     {
-        Instance = this;
         DontDestroyOnLoad(gameObject);
     }
 
@@ -40,13 +56,21 @@ public class Tween : MonoBehaviour
             var tweener = curr.Value;
             tweener.Update(Time.deltaTime);
             if (tweener.IsEnd())
-                _tweeners.Remove(tweener);
-            curr = curr.Next;
+            { 
+                var next = curr.Next;
+                _tweeners.Remove(curr);
+                curr = next;
+            }
+            else
+            {
+                curr = curr.Next;
+            }
         }
     }
 
     public void AddTweener(TweenerBase tweener)
     {
+        tweener.SetTweenManager(this);
         _tweeners.AddLast(tweener);
     }
 
@@ -54,17 +78,33 @@ public class Tween : MonoBehaviour
     {
         _tweeners.Remove(tweener);
     }
+
+    public void KillAll()
+    {
+        _tweeners.Clear();
+    }
+
+    public void Destroy()
+    {           
+        Destroy(gameObject);        
+    }
+
+    private void OnDestroy()
+    {
+        _tweeners.Clear();
+        _instance = null;
+    }
 }
 
 public enum EaseType
 {
-    Linear,
-    EaseInSine,
-    EaseOutSine,
-    EaseInOutSine,
-    EaseInBack,
-    EaseOutBack,
-    EaseInOutBack,
+    Linear = 0,
+    EaseInSine = 1,
+    EaseOutSine = 2,
+    EaseInOutSine = 3,
+    EaseInBack = 4,
+    EaseOutBack = 5,
+    EaseInOutBack = 6,
 }
 
 public abstract class TweenerBase
@@ -72,10 +112,12 @@ public abstract class TweenerBase
     public TweenerBase(float duration)
     {
         _duration = duration;
+        _easeType = EaseType.Linear;
     }
 
     protected float _timer = 0;
     protected float _duration;
+    protected EaseType _easeType;
 
     public virtual void Update(float deltaTime)
     {
@@ -88,9 +130,25 @@ public abstract class TweenerBase
         return _timer >= _duration;
     }
 
-    public void Kill()
+    private TweenManager _tweenManager;
+
+    public void SetTweenManager(TweenManager tweenManager)
     {
-        Tween.Instance.Kill(this);
+        _tweenManager = tweenManager;
+    }
+
+    public void Kill() 
+    { 
+        if (_tweenManager != null) 
+        {
+            _tweenManager.Kill(this);
+        }        
+    }
+
+    public virtual TweenerBase SetEaseType(EaseType easeType)
+    {
+        _easeType = easeType;
+        return this;
     }
 }
 
@@ -100,16 +158,12 @@ public abstract class Tweener<T> : TweenerBase where T : struct
     {                
         _getter = getter;
         _setter = setter;
-        _easeType = EaseType.Linear;
         _startValue = _getter();
         _endValue = endValue;
     }
 
-    protected float _timer = 0;
-    protected float _duration;
     protected Func<T> _getter;
     protected Action<T> _setter;
-    protected EaseType _easeType;
     protected T _startValue;
     protected T _endValue;
 
@@ -121,11 +175,6 @@ public abstract class Tweener<T> : TweenerBase where T : struct
     }
 
     public abstract T GetValue(float t);
-
-    public void SetEaseType(EaseType easeType)
-    {
-        _easeType = easeType;
-    }
 }
 
 public class Tweener_Float : Tweener<float>
@@ -140,6 +189,16 @@ public class Tweener_Float : Tweener<float>
                 return _Linear(t);
             case EaseType.EaseInSine:
                 return _Linear(_EaseInSine(t));
+            case EaseType.EaseOutSine:
+                return _Linear(_EaseOutSine(t));
+            case EaseType.EaseInOutSine:
+                return _Linear(_EaseInOutSine(t));
+            case EaseType.EaseOutBack:
+                return _Linear(_EaseOutBack(t));
+            case EaseType.EaseInOutBack:
+                return _Linear(_EaseInOutBack(t));
+            case EaseType.EaseInBack:
+                return _Linear(_EaseInBack(t));
             default:
                 return _Linear(t);
         }
@@ -153,6 +212,42 @@ public class Tweener_Float : Tweener<float>
     private float _EaseInSine(float t)
     {
         return 1 - Mathf.Cos((t * Mathf.PI) / 2);
+    }
+
+    private float _EaseOutSine(float t)
+    {
+        return Mathf.Sin((t * Mathf.PI) / 2);
+    }
+
+    private float _EaseInOutSine(float t)
+    {
+        return -(Mathf.Cos(Mathf.PI * t) - 1) / 2;
+    }
+
+    private float _EaseInBack(float t)
+    {
+        var c1 = 1.70158f;
+        var c3 = c1 + 1;
+
+        return c3 * t * t * t - c1 * t * t;
+    }
+
+    private float _EaseOutBack(float t)
+    {
+        var c1 = 1.70158f;
+        var c3 = c1 + 1;
+
+        return 1 + c3 * Mathf.Pow(t - 1, 3) + c1 * Mathf.Pow(t - 1, 2);
+    }
+
+    private float _EaseInOutBack(float t)
+    {
+        var c1 = 1.70158f;
+        var c2 = c1 * 1.525f;
+
+        return t < 0.5
+          ? (Mathf.Pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2)) / 2
+          : (Mathf.Pow(2 * t - 2, 2) * ((c2 + 1) * (t * 2 - 2) + c2) + 2) / 2;
     }
 }
 
@@ -184,5 +279,13 @@ public class Tweener_Vector3 : Tweener<Vector3>
         _yTweener.Update(deltaTime);
         _zTweener.Update(deltaTime);
         base.Update(deltaTime);
+    }
+
+    public override TweenerBase SetEaseType(EaseType easeType)
+    {
+        _xTweener.SetEaseType(easeType);
+        _yTweener.SetEaseType(easeType);
+        _zTweener.SetEaseType(easeType);
+        return this;
     }
 }
