@@ -25,6 +25,8 @@ public class TestTween : MonoBehaviour
 
         if (GUI.Button(new Rect { x = 100, y = 100, width = 200, height = 50 }, "Tween"))
         {
+            for (int i = 0; i < _tweens.Count; ++i)
+                _tweens[i].Kill();
             _tweens.Clear();
 
             item1.transform.position = new Vector3(-5, 2, 0);
