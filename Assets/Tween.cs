@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System;
@@ -24,7 +23,7 @@ public class TweenManager : MonoBehaviour
 {
     public static TweenManager _instance;
 
-    private LinkedList<TweenerBase> _tweeners = new LinkedList<TweenerBase>();
+    private List<TweenerBase> _tweeners = new List<TweenerBase>();
 
     public static void Init()
     {
@@ -48,22 +47,32 @@ public class TweenManager : MonoBehaviour
         DontDestroyOnLoad(gameObject);
     }
 
+    private List<TweenerBase> _cache = new List<TweenerBase>();
+
     private void Update()
     {
-        var curr = _tweeners.First;
-        while (curr != null)
+        _cache.Clear();
+        foreach (var tweener in _tweeners)
         {
-            var tweener = curr.Value;
-            tweener.Update(Time.deltaTime);
+            _cache.Add(tweener);
+        }
+        foreach (var tweener in _cache)
+        {
+            tweener.Update();
+        }
+        _cache.Clear();
+        for (int i = 0; i < _tweeners.Count;)
+        {
+            var tweener = _tweeners[i];
             if (tweener.IsEnd())
-            { 
-                var next = curr.Next;
-                _tweeners.Remove(curr);
-                curr = next;
+            {
+                var last = _tweeners[_tweeners.Count - 1];
+                _tweeners[i] = last;
+                _tweeners.RemoveAt(_tweeners.Count - 1);
             }
             else
             {
-                curr = curr.Next;
+                ++i;
             }
         }
     }
@@ -71,12 +80,12 @@ public class TweenManager : MonoBehaviour
     public void AddTweener(TweenerBase tweener)
     {
         tweener.SetTweenManager(this);
-        _tweeners.AddLast(tweener);
+        _tweeners.Add(tweener);
     }
 
     public void Kill(TweenerBase tweener)
     {
-        _tweeners.Remove(tweener);
+        _tweeners.Remove(tweener);        
     }
 
     public void KillAll()
@@ -91,7 +100,7 @@ public class TweenManager : MonoBehaviour
 
     private void OnDestroy()
     {
-        _tweeners.Clear();
+        KillAll();
         _instance = null;
     }
 }
@@ -113,15 +122,17 @@ public abstract class TweenerBase
     {
         _duration = duration;
         _easeType = EaseType.Linear;
+        _startTime = Time.time;
     }
 
-    protected float _timer = 0;
+    protected float _startTime;
+    protected float _timer;
     protected float _duration;
     protected EaseType _easeType;
 
-    public virtual void Update(float deltaTime)
+    public virtual void Update()
     {
-        _timer += deltaTime;
+        _timer = Time.time - _startTime;
         _timer = Mathf.Min(_timer, _duration);
     }
 
@@ -167,9 +178,9 @@ public abstract class Tweener<T> : TweenerBase where T : struct
     protected T _startValue;
     protected T _endValue;
 
-    public override void Update(float deltaTime)
+    public override void Update()
     {
-        base.Update(deltaTime);
+        base.Update();
         var v = GetValue(_timer / _duration);
         _setter?.Invoke(v);
     }
@@ -273,12 +284,12 @@ public class Tweener_Vector3 : Tweener<Vector3>
         return v;
     }
 
-    public override void Update(float deltaTime)
+    public override void Update()
     {
-        _xTweener.Update(deltaTime);
-        _yTweener.Update(deltaTime);
-        _zTweener.Update(deltaTime);
-        base.Update(deltaTime);
+        _xTweener.Update();
+        _yTweener.Update();
+        _zTweener.Update();
+        base.Update();
     }
 
     public override TweenerBase SetEaseType(EaseType easeType)
